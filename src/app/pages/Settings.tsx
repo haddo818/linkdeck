@@ -25,6 +25,7 @@ import {
   getStoredTeams,
   setStoredTeams,
   clearUserProfileSettings,
+  purgeLegacyProfileStorage,
   buildTeamInviteLink,
   createStoredTeam,
   subscribeTeamsUpdated,
@@ -97,11 +98,11 @@ export default function Settings() {
   const [nicknameDraft, setNicknameDraft] = useState('');
   const [newTeamName, setNewTeamName] = useState('');
   const [withdrawConfirmText, setWithdrawConfirmText] = useState('');
-  const [teams, setTeams] = useState<StoredTeam[]>(() => getStoredTeams());
+  const [teams, setTeams] = useState<StoredTeam[]>(() => getStoredTeams(null));
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<string>>(() => new Set());
 
-  const [displayNickname, setDisplayNickname] = useState(() => getStoredNickname());
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(() => getStoredAvatarDataUrl());
+  const [displayNickname, setDisplayNickname] = useState(() => getStoredNickname(null));
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(() => getStoredAvatarDataUrl(null));
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -117,21 +118,24 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    setDisplayNickname(getStoredNickname());
-    setAvatarPreview(getStoredAvatarDataUrl());
-    setTeams(getStoredTeams());
-  }, []);
+    const uid = authUser?.id ?? null;
+    setDisplayNickname(getStoredNickname(uid));
+    setAvatarPreview(getStoredAvatarDataUrl(uid));
+    setTeams(getStoredTeams(uid));
+  }, [authUser?.id]);
 
   useEffect(() => {
-    const stored = getStoredNickname();
+    const uid = authUser?.id ?? null;
+    const stored = getStoredNickname(uid);
     if (stored !== DEFAULT_PROFILE_NICKNAME) return;
     const fromAuth = displayNameFromAuthUser(authUser);
     if (fromAuth) setDisplayNickname(fromAuth);
   }, [authUser]);
 
   useEffect(() => {
-    return subscribeTeamsUpdated(() => setTeams(getStoredTeams()));
-  }, []);
+    const uid = authUser?.id ?? null;
+    return subscribeTeamsUpdated(() => setTeams(getStoredTeams(uid)));
+  }, [authUser?.id]);
 
   const allSelected = useMemo(
     () => teams.length > 0 && teams.every((t) => selectedTeamIds.has(t.id)),
@@ -156,17 +160,21 @@ export default function Settings() {
   };
 
   const persistTeams = (next: StoredTeam[]) => {
-    setStoredTeams(next);
+    setStoredTeams(next, authUser?.id);
     setTeams(next);
     setSelectedTeamIds(new Set());
   };
 
   const openNicknameModal = () => {
-    setNicknameDraft(getStoredNickname());
+    setNicknameDraft(getStoredNickname(authUser?.id));
     setModal('nickname');
   };
 
   const saveNickname = () => {
+    if (!authUser?.id) {
+      toast.error('로그인이 필요합니다.');
+      return;
+    }
     const next = nicknameDraft.trim();
     if (!next) {
       toast.error('닉네임을 입력해 주세요.');
@@ -176,13 +184,17 @@ export default function Settings() {
       toast.error('닉네임은 40자 이내로 입력해 주세요.');
       return;
     }
-    setStoredNickname(next);
+    setStoredNickname(next, authUser.id);
     setDisplayNickname(next);
     toast.success('닉네임이 저장되었습니다.');
     setModal(null);
   };
 
   const onPickAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!authUser?.id) {
+      toast.error('로그인이 필요합니다.');
+      return;
+    }
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file || !file.type.startsWith('image/')) {
@@ -199,7 +211,7 @@ export default function Settings() {
         toast.error('이미지 처리 후에도 용량이 커서 저장할 수 없습니다. 다른 이미지를 선택해 주세요.');
         return;
       }
-      setStoredAvatarDataUrl(dataUrl);
+      setStoredAvatarDataUrl(dataUrl, authUser.id);
       setAvatarPreview(dataUrl);
       toast.success('프로필 사진이 저장되었습니다.');
     } catch {
@@ -208,7 +220,11 @@ export default function Settings() {
   };
 
   const removeAvatar = () => {
-    setStoredAvatarDataUrl(null);
+    if (!authUser?.id) {
+      toast.error('로그인이 필요합니다.');
+      return;
+    }
+    setStoredAvatarDataUrl(null, authUser.id);
     setAvatarPreview(null);
     toast.success('프로필 사진이 제거되었습니다.');
   };
@@ -219,7 +235,7 @@ export default function Settings() {
       toast.error('팀 이름을 입력해 주세요.');
       return;
     }
-    const created = createStoredTeam(name, getStoredNickname());
+    const created = createStoredTeam(name, getStoredNickname(authUser?.id));
     const next = [...teams, created];
     persistTeams(next);
     setNewTeamName('');
@@ -247,6 +263,7 @@ export default function Settings() {
         return;
       }
     }
+    purgeLegacyProfileStorage();
     toast.success('로그아웃되었습니다.');
     navigate('/login', { replace: true });
   };
@@ -256,10 +273,11 @@ export default function Settings() {
       toast.error('확인 문구를 정확히 입력해 주세요: 탈퇴합니다');
       return;
     }
-    clearUserProfileSettings();
-    setDisplayNickname(getStoredNickname());
+    const uid = authUser?.id;
+    clearUserProfileSettings(uid);
+    setDisplayNickname(getStoredNickname(null));
     setAvatarPreview(null);
-    setTeams(getStoredTeams());
+    setTeams(getStoredTeams(null));
     setWithdrawConfirmText('');
     setModal(null);
     toast.success('회원 탈퇴가 완료되었습니다. 모든 계정 데이터가 삭제되었습니다.');

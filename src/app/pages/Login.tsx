@@ -47,9 +47,10 @@ export default function Login() {
       toast.error(formatAuthError(error));
       return;
     }
+    const uid = data.user?.id;
     const metaName = data.user ? displayNameFromAuthUser(data.user) : null;
-    if (metaName && getStoredNickname() === DEFAULT_PROFILE_NICKNAME) {
-      setStoredNickname(metaName);
+    if (metaName && uid && getStoredNickname(uid) === DEFAULT_PROFILE_NICKNAME) {
+      setStoredNickname(metaName, uid);
     }
     toast.success('로그인되었습니다.');
     navigate(from, { replace: true });

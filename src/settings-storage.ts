@@ -7,6 +7,34 @@ export const SETTINGS_STORAGE_KEYS = {
   teams: 'linkdeck-settings-teams',
 } as const;
 
+/** 예전 구현의 전역 키. 계정 간 프로필 섞임 방지를 위해 읽지 않고 로그아웃 등에서 제거합니다. */
+const LEGACY_PROFILE_KEYS = [
+  SETTINGS_STORAGE_KEYS.nickname,
+  SETTINGS_STORAGE_KEYS.avatar,
+  SETTINGS_STORAGE_KEYS.teams,
+] as const;
+
+function scopedNicknameKey(userId: string): string {
+  return `${SETTINGS_STORAGE_KEYS.nickname}:${userId}`;
+}
+function scopedAvatarKey(userId: string): string {
+  return `${SETTINGS_STORAGE_KEYS.avatar}:${userId}`;
+}
+function scopedTeamsKey(userId: string): string {
+  return `${SETTINGS_STORAGE_KEYS.teams}:${userId}`;
+}
+
+/** 로그아웃 시 호출: 예전 전역 프로필 키만 제거 (계정별 스코프 키는 유지). */
+export function purgeLegacyProfileStorage(): void {
+  try {
+    for (const k of LEGACY_PROFILE_KEYS) {
+      localStorage.removeItem(k);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 const PROFILE_UPDATED = 'linkdeck-profile-updated';
 const TEAMS_UPDATED = 'linkdeck-teams-updated';
 
@@ -70,49 +98,56 @@ export function buildTeamInviteLink(team: StoredTeam): string {
   return u.toString();
 }
 
-export function getStoredNickname(): string {
+export function getStoredNickname(userId: string | null | undefined): string {
+  if (!userId) return DEFAULT_PROFILE_NICKNAME;
   try {
-    const v = localStorage.getItem(SETTINGS_STORAGE_KEYS.nickname);
+    const v = localStorage.getItem(scopedNicknameKey(userId));
     return v?.trim() || DEFAULT_PROFILE_NICKNAME;
   } catch {
     return DEFAULT_PROFILE_NICKNAME;
   }
 }
 
-export function setStoredNickname(name: string): void {
+export function setStoredNickname(name: string, userId: string | null | undefined): void {
+  if (!userId) return;
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEYS.nickname, name.trim());
+    localStorage.setItem(scopedNicknameKey(userId), name.trim());
+    purgeLegacyProfileStorage();
     window.dispatchEvent(new CustomEvent(PROFILE_UPDATED));
   } catch {
     /* quota */
   }
 }
 
-export function getStoredAvatarDataUrl(): string | null {
+export function getStoredAvatarDataUrl(userId: string | null | undefined): string | null {
+  if (!userId) return null;
   try {
-    const v = localStorage.getItem(SETTINGS_STORAGE_KEYS.avatar);
+    const v = localStorage.getItem(scopedAvatarKey(userId));
     return v && v.startsWith('data:') ? v : null;
   } catch {
     return null;
   }
 }
 
-export function setStoredAvatarDataUrl(dataUrl: string | null): void {
+export function setStoredAvatarDataUrl(dataUrl: string | null, userId: string | null | undefined): void {
+  if (!userId) return;
   try {
     if (dataUrl == null || dataUrl === '') {
-      localStorage.removeItem(SETTINGS_STORAGE_KEYS.avatar);
+      localStorage.removeItem(scopedAvatarKey(userId));
     } else {
-      localStorage.setItem(SETTINGS_STORAGE_KEYS.avatar, dataUrl);
+      localStorage.setItem(scopedAvatarKey(userId), dataUrl);
     }
+    purgeLegacyProfileStorage();
     window.dispatchEvent(new CustomEvent(PROFILE_UPDATED));
   } catch {
     /* quota */
   }
 }
 
-export function getStoredTeams(): StoredTeam[] {
+export function getStoredTeams(userId: string | null | undefined): StoredTeam[] {
+  if (!userId) return DEFAULT_TEAMS.map(normalizeTeam);
   try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEYS.teams);
+    const raw = localStorage.getItem(scopedTeamsKey(userId));
     if (!raw) return DEFAULT_TEAMS.map(normalizeTeam);
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_TEAMS.map(normalizeTeam);
@@ -122,21 +157,26 @@ export function getStoredTeams(): StoredTeam[] {
   }
 }
 
-export function setStoredTeams(teams: StoredTeam[]): void {
+export function setStoredTeams(teams: StoredTeam[], userId: string | null | undefined): void {
+  if (!userId) return;
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEYS.teams, JSON.stringify(teams));
+    localStorage.setItem(scopedTeamsKey(userId), JSON.stringify(teams));
+    purgeLegacyProfileStorage();
     window.dispatchEvent(new CustomEvent(TEAMS_UPDATED));
   } catch {
     /* quota */
   }
 }
 
-/** 회원 탈퇴 시 프로필·팀 설정만 제거 (테마 등은 유지) */
-export function clearUserProfileSettings(): void {
+/** 회원 탈퇴 시 해당 계정의 프로필·팀 설정만 제거 (테마 등은 유지) */
+export function clearUserProfileSettings(userId: string | null | undefined): void {
   try {
-    localStorage.removeItem(SETTINGS_STORAGE_KEYS.nickname);
-    localStorage.removeItem(SETTINGS_STORAGE_KEYS.avatar);
-    localStorage.removeItem(SETTINGS_STORAGE_KEYS.teams);
+    if (userId) {
+      localStorage.removeItem(scopedNicknameKey(userId));
+      localStorage.removeItem(scopedAvatarKey(userId));
+      localStorage.removeItem(scopedTeamsKey(userId));
+    }
+    purgeLegacyProfileStorage();
     window.dispatchEvent(new CustomEvent(PROFILE_UPDATED));
     window.dispatchEvent(new CustomEvent(TEAMS_UPDATED));
   } catch {

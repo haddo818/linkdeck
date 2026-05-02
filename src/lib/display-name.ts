@@ -20,7 +20,7 @@ export function resolveDashboardDisplayName(
   authUser: User | null | undefined,
   profileNameFromDb: string | null | undefined
 ): string {
-  const stored = getStoredNickname();
+  const stored = getStoredNickname(authUser?.id);
   if (stored !== DEFAULT_PROFILE_NICKNAME && stored.trim()) {
     return stored;
   }

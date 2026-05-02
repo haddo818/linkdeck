@@ -2,7 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo, useReducer } from 're
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { getInitialDarkMode, persistDarkMode } from '../../theme-storage';
-import { getStoredAvatarDataUrl, getStoredTeams, subscribeProfileUpdated, subscribeTeamsUpdated } from '../../settings-storage';
+import {
+  getStoredAvatarDataUrl,
+  getStoredTeams,
+  purgeLegacyProfileStorage,
+  subscribeProfileUpdated,
+  subscribeTeamsUpdated,
+} from '../../settings-storage';
 import { resolveDashboardDisplayName } from '../../lib/display-name';
 import type { StoredTeam } from '../../settings-storage';
 import { formatAuthError } from '../../lib/auth-errors';
@@ -1494,24 +1500,33 @@ export default function Dashboard() {
   const [searchParams] = useSearchParams();
   const homeScope = searchParams.get('scope') === 'personal' ? 'personal' : 'all';
 
-  const [localTeams, setLocalTeams] = useState(getStoredTeams);
-  useEffect(() => {
-    return subscribeTeamsUpdated(() => setLocalTeams(getStoredTeams()));
-  }, []);
-
   const { userId, user: authUser, loading: authLoading } = useAuth();
+
+  const [localTeams, setLocalTeams] = useState<StoredTeam[]>(() => getStoredTeams(null));
+  useEffect(() => {
+    setLocalTeams(getStoredTeams(userId));
+  }, [userId]);
+
+  useEffect(() => {
+    return subscribeTeamsUpdated(() => setLocalTeams(getStoredTeams(userId)));
+  }, [userId]);
+
   const useRemote = Boolean(isSupabaseConfigured && supabase && userId);
   const [remoteProfileName, setRemoteProfileName] = useState<string | null>(null);
   const [profileEpoch, bumpProfileDisplay] = useReducer((n: number) => n + 1, 0);
 
-  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(() => getStoredAvatarDataUrl());
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string | null>(() => getStoredAvatarDataUrl(null));
+
+  useEffect(() => {
+    setAvatarDataUrl(getStoredAvatarDataUrl(userId));
+  }, [userId]);
 
   useEffect(() => {
     return subscribeProfileUpdated(() => {
       bumpProfileDisplay();
-      setAvatarDataUrl(getStoredAvatarDataUrl());
+      setAvatarDataUrl(getStoredAvatarDataUrl(userId));
     });
-  }, []);
+  }, [userId]);
 
   const [dbTeams, setDbTeams] = useState<StoredTeam[] | null>(null);
 
@@ -1574,6 +1589,7 @@ export default function Dashboard() {
         return;
       }
     }
+    purgeLegacyProfileStorage();
     toast.success('로그아웃되었습니다.');
     navigate('/login', { replace: true });
   };
@@ -1581,8 +1597,8 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    if (sidebarOpen) setAvatarDataUrl(getStoredAvatarDataUrl());
-  }, [sidebarOpen]);
+    if (sidebarOpen) setAvatarDataUrl(getStoredAvatarDataUrl(userId));
+  }, [sidebarOpen, userId]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchScope, setSearchScope] = useState<string>('all'); // 'all' or board id
   const [showScopeDropdown, setShowScopeDropdown] = useState(false);

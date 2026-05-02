@@ -53,7 +53,8 @@ export default function Signup() {
     }
 
     const trimmedName = name.trim();
-    if (trimmedName) setStoredNickname(trimmedName);
+    const uid = data.user?.id;
+    if (trimmedName && uid) setStoredNickname(trimmedName, uid);
 
     if (data.session) {
       toast.success('가입이 완료되었습니다.');
