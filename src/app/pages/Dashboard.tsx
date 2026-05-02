@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useReducer } from 'react';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { getInitialDarkMode, persistDarkMode } from '../../theme-storage';
 import { getStoredAvatarDataUrl, getStoredTeams, subscribeProfileUpdated, subscribeTeamsUpdated } from '../../settings-storage';
 import { resolveDashboardDisplayName } from '../../lib/display-name';
 import type { StoredTeam } from '../../settings-storage';
+import { formatAuthError } from '../../lib/auth-errors';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import {
   deleteBoardById,
@@ -1380,6 +1381,7 @@ function ProfileSidebar({
   displayName,
   accountEmail,
   avatarDataUrl,
+  onLogout,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1389,6 +1391,7 @@ function ProfileSidebar({
   displayName: string;
   accountEmail: string;
   avatarDataUrl: string | null;
+  onLogout: () => void | Promise<void>;
 }) {
   if (!isOpen) return null;
 
@@ -1464,9 +1467,13 @@ function ProfileSidebar({
 
           <div className="border-t border-gray-200 dark:border-gray-700 my-2" />
 
-          <a
-            href="/login"
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-red-600 transition-colors"
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              void onLogout();
+            }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-red-600 transition-colors text-left"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -1474,7 +1481,7 @@ function ProfileSidebar({
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
             <span>로그아웃</span>
-          </a>
+          </button>
         </div>
       </div>
     </>
@@ -1482,6 +1489,7 @@ function ProfileSidebar({
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { teamId: routeTeamId } = useParams<{ teamId?: string }>();
   const [searchParams] = useSearchParams();
   const homeScope = searchParams.get('scope') === 'personal' ? 'personal' : 'all';
@@ -1557,6 +1565,18 @@ export default function Dashboard() {
     [authUser, remoteProfileName, profileEpoch]
   );
   const sidebarEmail = authUser?.email ?? '';
+
+  const handleLogout = async () => {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        toast.error(formatAuthError(error));
+        return;
+      }
+    }
+    toast.success('로그아웃되었습니다.');
+    navigate('/login', { replace: true });
+  };
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -2630,6 +2650,7 @@ export default function Dashboard() {
             displayName={sidebarDisplayName}
             accountEmail={sidebarEmail}
             avatarDataUrl={avatarDataUrl}
+            onLogout={handleLogout}
           />
 
           <AddLinkModal

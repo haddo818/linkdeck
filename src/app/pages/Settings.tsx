@@ -239,9 +239,16 @@ export default function Settings() {
     setDeleteTeamsModal(null);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (isSupabaseConfigured && supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        toast.error(formatAuthError(error));
+        return;
+      }
+    }
     toast.success('로그아웃되었습니다.');
-    window.setTimeout(() => navigate('/login', { replace: true }), 350);
+    navigate('/login', { replace: true });
   };
 
   const handleWithdraw = () => {
