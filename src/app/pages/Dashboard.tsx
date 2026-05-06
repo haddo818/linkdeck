@@ -59,18 +59,25 @@ interface Board {
 
 type ViewMode = 'grid' | 'table';
 
-/** main 영역 max-w-7xl(1280px) · gap-6 · 한 줄에 3개 보드 기준 너비 */
+/** main 영역 max-w-7xl(1280px) · gap-6 · 넓은 화면 기준 한 줄 보드 개수 */
 const BOARD_GRID_MAX_CONTAINER_PX = 1280;
 const BOARD_GRID_GAP_PX = 24;
 const DEFAULT_BOARDS_PER_ROW = 3;
 
+function getBoardsPerRowForViewport(vw: number): number {
+  if (vw < 640) return 1;
+  if (vw < 1024) return 2;
+  return DEFAULT_BOARDS_PER_ROW;
+}
+
 function getDefaultBoardDimensions(): { width: number; height: number } {
   const vw = typeof window !== 'undefined' ? window.innerWidth : BOARD_GRID_MAX_CONTAINER_PX;
-  const padX = vw >= 1024 ? 64 : vw >= 640 ? 48 : 32;
+  const boardsPerRow = typeof window !== 'undefined' ? getBoardsPerRowForViewport(vw) : DEFAULT_BOARDS_PER_ROW;
+  const padX = vw >= 1024 ? 64 : vw >= 640 ? 48 : 24;
   const containerOuter = Math.min(vw, BOARD_GRID_MAX_CONTAINER_PX);
-  const inner = Math.max(280, containerOuter - padX);
-  const gapTotal = (DEFAULT_BOARDS_PER_ROW - 1) * BOARD_GRID_GAP_PX;
-  const width = Math.floor((inner - gapTotal) / DEFAULT_BOARDS_PER_ROW);
+  const inner = Math.max(260, containerOuter - padX);
+  const gapTotal = Math.max(0, boardsPerRow - 1) * BOARD_GRID_GAP_PX;
+  const width = Math.floor((inner - gapTotal) / boardsPerRow);
   const clampedW = Math.max(200, Math.min(width, 1500));
   const height = Math.round(Math.min(600, Math.max(320, clampedW * (500 / 300))));
   return { width: clampedW, height };
@@ -454,16 +461,37 @@ function BoardComponent({ board, onAddLink, onDropLink, onDeleteLink, onArchiveL
 
   const activeLinks = board.links.filter(l => l.status === 'active');
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  /** 마우스·터치 공통 (모바일은 mouse 이벤트가 없어 Pointer Events 필수) */
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    const target = e.currentTarget;
+    const pointerId = e.pointerId;
+    target.setPointerCapture(pointerId);
     setIsResizing(true);
     const startX = e.clientX;
     const startY = e.clientY;
     const startWidth = width;
     const startHeight = height;
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      setIsResizing(false);
+      try {
+        target.releasePointerCapture(pointerId);
+      } catch {
+        /* already released */
+      }
+      target.removeEventListener('pointermove', handlePointerMove);
+      target.removeEventListener('pointerup', endResize);
+      target.removeEventListener('pointercancel', endResize);
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
       const newWidth = Math.max(200, Math.min(1500, startWidth + deltaX));
@@ -471,36 +499,46 @@ function BoardComponent({ board, onAddLink, onDropLink, onDeleteLink, onArchiveL
       onSizeChange(newWidth, newHeight);
     };
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+    const endResize = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      finish();
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    target.addEventListener('pointermove', handlePointerMove);
+    target.addEventListener('pointerup', endResize);
+    target.addEventListener('pointercancel', endResize);
   };
 
   return (
     <div
       ref={drop}
-      className={`bg-white dark:bg-gray-800 rounded-3xl p-6 transition-all relative ${
-        isFullscreen ? 'w-full' : 'flex-shrink-0'
+      className={`bg-white dark:bg-gray-800 rounded-3xl p-4 sm:p-6 transition-all relative box-border ${
+        isFullscreen
+          ? 'w-full max-w-full'
+          : 'w-full max-w-full min-w-0 sm:w-auto sm:max-w-none sm:flex-shrink-0'
       } ${neumorphismStyle.light}`}
       style={{
         boxShadow: isOver ? `0 0 0 3px ${board.color}40, 12px 12px 24px rgba(0,0,0,0.15), -12px -12px 24px rgba(255,255,255,0.8)` : undefined,
-        height: isFullscreen ? 'calc(100vh - 200px)' : `${height}px`,
-        width: isFullscreen ? '100%' : `${width}px`,
+        ...(isFullscreen
+          ? {
+              height: 'min(calc(100vh - 160px), 85dvh)',
+              width: '100%',
+            }
+          : {
+              height: `${height}px`,
+              width: `min(100%, ${width}px)`,
+              maxWidth: '100%',
+            }),
       }}
     >
-      <div className="relative z-30 flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: board.color }} />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{board.name}</h2>
-          <span className="text-sm text-gray-500 dark:text-gray-400">{activeLinks.length}</span>
+      <div className="relative z-30 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: board.color }} />
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">{board.name}</h2>
+          <span className="text-sm text-gray-500 dark:text-gray-400 shrink-0">{activeLinks.length}</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
@@ -557,8 +595,8 @@ function BoardComponent({ board, onAddLink, onDropLink, onDeleteLink, onArchiveL
         </div>
       </div>
 
-      <div className="relative z-0 overflow-y-auto pb-4" style={{
-        maxHeight: isFullscreen ? 'calc(100vh - 380px)' : `${height - 180}px`
+      <div className="relative z-0 overflow-y-auto overflow-x-hidden pb-4" style={{
+        maxHeight: isFullscreen ? 'min(calc(100vh - 340px), 70dvh)' : `${height - 180}px`
       }}>
         <div className="grid gap-4 mb-4" style={{
           gridTemplateColumns: isFullscreen
@@ -593,8 +631,9 @@ function BoardComponent({ board, onAddLink, onDropLink, onDeleteLink, onArchiveL
       {/* Resize Handle - 우측 하단 코너 (전체화면이 아닐 때만 표시) */}
       {!isFullscreen && (
         <div
-          onMouseDown={handleMouseDown}
-          className={`absolute bottom-0 right-0 w-10 h-10 cursor-nwse-resize flex items-center justify-center group ${
+          aria-label="보드 크기 조절"
+          onPointerDown={handleResizePointerDown}
+          className={`absolute bottom-0 right-0 w-12 h-12 sm:w-10 sm:h-10 cursor-nwse-resize touch-none select-none flex items-center justify-center group ${
             isResizing ? 'bg-[#169392]/20' : ''
           } rounded-br-3xl`}
         >
@@ -707,8 +746,8 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-3xl overflow-hidden ${neumorphismStyle.light}`}>
       {/* 필터 섹션 */}
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex flex-wrap gap-4">
+      <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">보드 필터</label>
             <select
@@ -771,11 +810,11 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
+      <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0 touch-pan-x">
+        <table className="w-full min-w-[640px] text-left">
           <thead className="bg-gray-50 dark:bg-gray-900/50">
             <tr>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('title')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -783,7 +822,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                   제목 <ArrowUpDown size={14} />
                 </button>
               </th>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('memo')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -791,7 +830,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                   메모 <ArrowUpDown size={14} />
                 </button>
               </th>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('board')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -799,7 +838,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                   주제 <ArrowUpDown size={14} />
                 </button>
               </th>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('boardType')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -807,8 +846,8 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                   보드 타입 <ArrowUpDown size={14} />
                 </button>
               </th>
-              <th className="px-6 py-4 text-left text-sm font-medium text-gray-700 dark:text-gray-300">링크</th>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-sm font-medium text-gray-700 dark:text-gray-300">링크</th>
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('author')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -816,7 +855,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                   작성자 <ArrowUpDown size={14} />
                 </button>
               </th>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('status')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -824,7 +863,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                   상태 <ArrowUpDown size={14} />
                 </button>
               </th>
-              <th className="px-6 py-4 text-left">
+              <th className="px-3 sm:px-6 py-3 sm:py-4 text-left">
                 <button
                   onClick={() => handleSort('createdAt')}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-[#169392]"
@@ -837,7 +876,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {paginatedLinks.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-6 py-12 text-center">
+                <td colSpan={8} className="px-4 sm:px-6 py-8 sm:py-12 text-center">
                   <div className="flex flex-col items-center gap-3">
                     <Search size={48} className="text-gray-300 dark:text-gray-600" />
                     <p className="text-gray-600 dark:text-gray-400">
@@ -853,19 +892,19 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                 const boardType = getBoardType(link.boardId);
                 return (
                   <tr key={link.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm font-medium text-gray-900 dark:text-gray-100">
                       {highlightText(link.title, searchQuery)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-600 dark:text-gray-400 max-w-xs truncate">
                       {link.memo ? highlightText(link.memo, searchQuery) : '-'}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getBoardColor(link.boardId) }} />
                         <span className="text-sm text-gray-900 dark:text-gray-100">{getBoardName(link.boardId)}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <span className={`inline-flex px-2 py-1 rounded-full text-xs ${
                         boardType === '팀'
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
@@ -874,13 +913,13 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                         {boardType}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-[#169392] hover:underline max-w-xs truncate">
                         {highlightText(link.url, searchQuery)} <ExternalLink size={12} />
                       </a>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{link.createdBy}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-600 dark:text-gray-400">{link.createdBy}</td>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4">
                       <span className={`inline-flex px-2 py-1 rounded-full text-xs ${
                         link.status === 'active'
                           ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
@@ -889,7 +928,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
                         {link.status === 'active' ? '활성' : '보관'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{link.createdAt.toLocaleDateString('ko-KR')}</td>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-600 dark:text-gray-400">{link.createdAt.toLocaleDateString('ko-KR')}</td>
                   </tr>
                 );
               })
@@ -899,7 +938,7 @@ function TableView({ links, boards, onDeleteLink, onArchiveLink, searchQuery }: 
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+        <div className="flex flex-wrap items-center justify-center gap-2 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 dark:border-gray-700">
           <button
             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             disabled={currentPage === 1}
@@ -970,7 +1009,7 @@ function EditBoardModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-md ${neumorphismStyle.light}`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[min(90dvh,680px)] overflow-y-auto overscroll-contain ${neumorphismStyle.light}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">보드 수정</h2>
           <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -1052,7 +1091,7 @@ function AddBoardModal({ isOpen, onClose, onSubmit }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-md ${neumorphismStyle.light}`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[min(90dvh,680px)] overflow-y-auto overscroll-contain ${neumorphismStyle.light}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">새 보드 만들기</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -1139,7 +1178,7 @@ function AddLinkModal({ isOpen, onClose, onSubmit, boardName }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-md ${neumorphismStyle.light}`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[min(90dvh,680px)] overflow-y-auto overscroll-contain ${neumorphismStyle.light}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">링크 추가 - {boardName}</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -1234,7 +1273,7 @@ function EditLinkModal({ isOpen, onClose, onSubmit, link, boardName }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-md ${neumorphismStyle.light}`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[min(90dvh,680px)] overflow-y-auto overscroll-contain ${neumorphismStyle.light}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">링크 수정 - {boardName}</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -1323,7 +1362,7 @@ function ScrapLinkModal({ isOpen, onClose, onSubmit, link, boards }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-md ${neumorphismStyle.light}`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-3xl p-5 sm:p-6 w-full max-w-md max-h-[min(90dvh,680px)] overflow-y-auto overscroll-contain ${neumorphismStyle.light}`}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">링크 가져오기</h2>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -2122,38 +2161,71 @@ export default function Dashboard() {
   return (
     <DndProvider backend={HTML5Backend}>
       <DragEdgeAutoScroll />
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors">
-          {/* Header */}
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors overflow-x-hidden">
+          {/* Header — 모바일에서는 검색을 두 번째 줄로 두어 가로 넘침 방지 */}
           <header className="sticky top-0 z-30 isolate bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg border-b border-gray-200 dark:border-gray-700 shadow-sm">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#169392] to-[#0d6766] flex items-center justify-center">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
-                      <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z" />
-                    </svg>
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3 min-w-0">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[#169392] to-[#0d6766] flex items-center justify-center shrink-0">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="white" className="sm:w-6 sm:h-6">
+                        <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z" />
+                      </svg>
+                    </div>
+                    <div className="hidden sm:flex flex-col gap-0.5 min-w-0">
+                      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">
+                        {pageTitle}
+                      </h1>
+                      <p className="text-[11px] sm:text-xs text-neutral-500/85 dark:text-neutral-400/75 leading-snug tracking-wide">
+                        링크 보드 서비스
+                      </p>
+                    </div>
+                    <div className="sm:hidden min-w-0 flex-1">
+                      <h1 className="text-base font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">
+                        {pageTitle}
+                      </h1>
+                      <p className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">링크 보드 서비스</p>
+                    </div>
                   </div>
-                  <div className="hidden sm:flex flex-col gap-0.5 min-w-0">
-                    <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 leading-tight truncate">
-                      {pageTitle}
-                    </h1>
-                    <p className="text-[11px] sm:text-xs text-neutral-500/85 dark:text-neutral-400/75 leading-snug tracking-wide">
-                      링크 보드 서비스
-                    </p>
+
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode(viewMode === 'grid' ? 'table' : 'grid')}
+                      className="p-2.5 sm:p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-200"
+                      title={viewMode === 'grid' ? '테이블 뷰' : '그리드 뷰'}
+                    >
+                      {viewMode === 'grid' ? <TableIcon size={20} /> : <LayoutGrid size={20} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSidebarOpen(true)}
+                      title="메뉴"
+                      aria-label="메뉴 열기"
+                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden shrink-0 bg-gradient-to-br from-[#169392] to-[#0d6766] flex items-center justify-center text-white ring-2 ring-white/30 dark:ring-gray-700"
+                    >
+                      {avatarDataUrl ? (
+                        <img src={avatarDataUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <User size={20} />
+                      )}
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex-1 max-w-2xl flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
                   {/* 검색 범위 선택 드롭다운 */}
-                  <div className="relative">
+                  <div className="relative shrink-0 w-full sm:w-auto">
                     <button
+                      type="button"
                       onClick={() => setShowScopeDropdown(!showScopeDropdown)}
-                      className={`flex items-center gap-2 px-4 py-3 bg-white dark:bg-gray-800 rounded-2xl ${neumorphismStyle.inset} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors whitespace-nowrap`}
+                      className={`flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 px-4 py-2.5 sm:py-3 bg-white dark:bg-gray-800 rounded-2xl ${neumorphismStyle.inset} hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors`}
                     >
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate min-w-0">
                         {searchScope === 'all' ? '전체' : boards.find(b => b.id === searchScope)?.name || '전체'}
                       </span>
-                      <ChevronDown size={16} className="text-gray-500 dark:text-gray-400" />
+                      <ChevronDown size={16} className="text-gray-500 dark:text-gray-400 shrink-0" />
                     </button>
 
                     {showScopeDropdown && (
@@ -2162,7 +2234,7 @@ export default function Dashboard() {
                           className="fixed inset-0 z-10"
                           onClick={() => setShowScopeDropdown(false)}
                         />
-                        <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden z-20 min-w-[180px]">
+                        <div className="absolute top-full left-0 right-0 sm:right-auto mt-2 bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden z-20 min-w-0 sm:min-w-[180px] max-h-[min(70vh,320px)] overflow-y-auto">
                           <button
                             onClick={() => {
                               setSearchScope('all');
@@ -2189,7 +2261,7 @@ export default function Dashboard() {
                                 className="w-3 h-3 rounded-full"
                                 style={{ backgroundColor: board.color }}
                               />
-                              {board.name}
+                              <span className="truncate text-left min-w-0">{board.name}</span>
                             </button>
                           ))}
                         </div>
@@ -2198,63 +2270,42 @@ export default function Dashboard() {
                   </div>
 
                   {/* 검색창 */}
-                  <div className={`flex-1 flex items-center gap-3 px-4 sm:px-6 py-3 bg-white dark:bg-gray-800 rounded-2xl ${neumorphismStyle.inset} ${searchQuery ? 'ring-2 ring-[#169392]/50' : ''}`}>
-                    <Search size={20} className={searchQuery ? 'text-[#169392]' : 'text-gray-400 dark:text-gray-500'} />
+                  <div className={`flex-1 min-w-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-gray-800 rounded-2xl ${neumorphismStyle.inset} ${searchQuery ? 'ring-2 ring-[#169392]/50' : ''}`}>
+                    <Search size={18} className={`sm:w-5 sm:h-5 shrink-0 ${searchQuery ? 'text-[#169392]' : 'text-gray-400 dark:text-gray-500'}`} />
                     <input
-                      type="text"
+                      type="search"
+                      enterKeyHint="search"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="제목, 메모, URL로 링크 검색..."
-                      className="flex-1 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm sm:text-base placeholder:text-gray-400"
+                      placeholder="링크 검색…"
+                      className="flex-1 min-w-0 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm sm:text-base placeholder:text-gray-400"
                     />
                     {searchQuery && (
                       <button
+                        type="button"
                         onClick={() => {
                           setSearchQuery('');
                           setSearchScope('all');
                         }}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors shrink-0"
                       >
                         <XCircle size={18} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" />
                       </button>
                     )}
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setViewMode(viewMode === 'grid' ? 'table' : 'grid')}
-                    className="p-3 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-200"
-                    title={viewMode === 'grid' ? '테이블 뷰' : '그리드 뷰'}
-                  >
-                    {viewMode === 'grid' ? <TableIcon size={20} /> : <LayoutGrid size={20} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSidebarOpen(true)}
-                    title="메뉴"
-                    aria-label="메뉴 열기"
-                    className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-gradient-to-br from-[#169392] to-[#0d6766] flex items-center justify-center text-white ring-2 ring-white/30 dark:ring-gray-700"
-                  >
-                    {avatarDataUrl ? (
-                      <img src={avatarDataUrl} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <User size={20} />
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           </header>
 
           {/* Main */}
-          <main className="relative z-0 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <main className="relative z-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 w-full min-w-0">
             {/* Dashboard Type Selector */}
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="inline-flex flex-wrap gap-1 rounded-xl bg-gray-100 dark:bg-gray-800 p-1">
+              <div className="inline-flex flex-wrap gap-1 rounded-xl bg-gray-100 dark:bg-gray-800 p-1 w-full sm:w-auto">
                 <Link
                   to="/dashboard"
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     !routeTeamId && homeScope === 'all'
                       ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
                       : 'text-gray-600 dark:text-gray-400'
@@ -2264,7 +2315,7 @@ export default function Dashboard() {
                 </Link>
                 <Link
                   to="/dashboard?scope=personal"
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     !routeTeamId && homeScope === 'personal'
                       ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
                       : 'text-gray-600 dark:text-gray-400'
@@ -2278,7 +2329,7 @@ export default function Dashboard() {
                     <Link
                       key={team.id}
                       to={`/dashboard/team/${team.id}`}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                         routeTeamId === team.id
                           ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
                           : 'text-gray-600 dark:text-gray-400'
@@ -2385,7 +2436,7 @@ export default function Dashboard() {
             ) : viewMode === 'grid' ? (
               <div>
                 {searchQuery && [...filteredPersonalBoards, ...filteredTeamBoards].every(board => board.links.length === 0) ? (
-                  <div className={`bg-white dark:bg-gray-800 rounded-3xl p-12 text-center ${neumorphismStyle.light}`}>
+                  <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 sm:p-12 text-center ${neumorphismStyle.light}`}>
                     <div className="max-w-md mx-auto">
                       <Search size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
                       <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -2415,11 +2466,11 @@ export default function Dashboard() {
                     {/* 개인 대시보드 (팀 전용 라우트에서는 숨김) */}
                     {!routeTeamId && (homeScope === 'all' || homeScope === 'personal') && (
                       <div>
-                        <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 sm:mb-4 flex items-center gap-2 min-w-0">
                           <User size={24} className="text-[#169392]" />
                           개인 보드
                         </h2>
-                        <div className="flex flex-wrap gap-6">
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 sm:gap-6 w-full min-w-0">
                           {filteredPersonalBoards.map((board) =>
                             board.links.length > 0 || !searchQuery ? (
                               <BoardComponent
@@ -2450,7 +2501,7 @@ export default function Dashboard() {
                                 setNewBoardType('personal');
                                 setAddBoardModalOpen(true);
                               }}
-                              className="flex-shrink-0 w-64 h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
+                              className="w-full max-w-full sm:w-64 sm:max-w-none sm:flex-shrink-0 h-64 sm:h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-2 sm:gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
                             >
                               <Plus size={24} />
                               <span className="text-lg">새 보드 만들기</span>
@@ -2463,11 +2514,11 @@ export default function Dashboard() {
                     {/* 팀 대시보드: 단일 팀 (URL) */}
                     {routeTeamId && currentTeam && (
                       <div>
-                        <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                        <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 sm:mb-4 flex items-center gap-2 min-w-0">
                           <UsersIcon size={24} className="text-[#169392]" />
                           {currentTeam.name}
                         </h2>
-                        <div className="flex flex-wrap gap-6">
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 sm:gap-6 w-full min-w-0">
                           {filteredTeamBoards.map((board) =>
                             board.links.length > 0 || !searchQuery ? (
                               <BoardComponent
@@ -2499,7 +2550,7 @@ export default function Dashboard() {
                                 setPrefillTeamIdForNewBoard(null);
                                 setAddBoardModalOpen(true);
                               }}
-                              className="flex-shrink-0 w-64 h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
+                              className="w-full max-w-full sm:w-64 sm:max-w-none sm:flex-shrink-0 h-64 sm:h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-2 sm:gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
                             >
                               <Plus size={24} />
                               <span className="text-lg">새 보드 만들기</span>
@@ -2516,11 +2567,11 @@ export default function Dashboard() {
                           const boardsForTeam = filterBoardsBySearch(teamBoards.filter((b) => b.teamId === team.id));
                           return (
                             <div key={team.id}>
-                              <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                              <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 sm:mb-4 flex items-center gap-2 min-w-0">
                                 <UsersIcon size={24} className="text-[#169392]" />
                                 {team.name}
                               </h2>
-                              <div className="flex flex-wrap gap-6">
+                              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 sm:gap-6 w-full min-w-0">
                                 {boardsForTeam.map((board) =>
                                   board.links.length > 0 || !searchQuery ? (
                                     <BoardComponent
@@ -2552,7 +2603,7 @@ export default function Dashboard() {
                                       setPrefillTeamIdForNewBoard(team.id);
                                       setAddBoardModalOpen(true);
                                     }}
-                                    className="flex-shrink-0 w-64 h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
+                                    className="w-full max-w-full sm:w-64 sm:max-w-none sm:flex-shrink-0 h-64 sm:h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-2 sm:gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
                                   >
                                     <Plus size={24} />
                                     <span className="text-lg">새 보드 만들기</span>
@@ -2564,11 +2615,11 @@ export default function Dashboard() {
                         })}
                         {orphanTeamBoards.length > 0 && (
                           <div>
-                            <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3 sm:mb-4 flex items-center gap-2 min-w-0">
                               <UsersIcon size={24} className="text-[#169392]" />
                               기타 팀 보드
                             </h2>
-                            <div className="flex flex-wrap gap-6">
+                            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 sm:gap-6 w-full min-w-0">
                               {filterBoardsBySearch(orphanTeamBoards).map((board) =>
                                 board.links.length > 0 || !searchQuery ? (
                                   <BoardComponent
@@ -2599,7 +2650,7 @@ export default function Dashboard() {
                                     setPrefillTeamIdForNewBoard(orphanTeamBoards[0]?.teamId ?? storedTeams[0]?.id ?? 't1');
                                     setAddBoardModalOpen(true);
                                   }}
-                                  className="flex-shrink-0 w-64 h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
+                                  className="w-full max-w-full sm:w-64 sm:max-w-none sm:flex-shrink-0 h-64 sm:h-80 rounded-3xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-[#169392] transition-colors flex flex-col items-center justify-center gap-2 sm:gap-3 text-gray-600 dark:text-gray-400 hover:text-[#169392]"
                                 >
                                   <Plus size={24} />
                                   <span className="text-lg">새 보드 만들기</span>
@@ -2616,7 +2667,7 @@ export default function Dashboard() {
             ) : (
               <>
                 {searchQuery && filteredLinks.length === 0 ? (
-                  <div className={`bg-white dark:bg-gray-800 rounded-3xl p-12 text-center ${neumorphismStyle.light}`}>
+                  <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 sm:p-12 text-center ${neumorphismStyle.light}`}>
                     <div className="max-w-md mx-auto">
                       <Search size={48} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
                       <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">

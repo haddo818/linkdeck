@@ -287,9 +287,9 @@ export default function Settings() {
   const closeModal = () => setModal(null);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 overflow-x-hidden">
       <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center gap-4">
             <Link
               to="/dashboard"
@@ -302,7 +302,7 @@ export default function Settings() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 w-full min-w-0 overflow-x-hidden">
         <div className={`bg-white dark:bg-gray-800 rounded-3xl overflow-hidden relative ${neumorphismStyle.light}`}>
           <div className="border-b border-gray-200 dark:border-gray-700">
             <div className="flex overflow-x-auto">
@@ -332,7 +332,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="p-8">
+          <div className="p-4 sm:p-8">
             {activeTab === 'account' && (
               <div className="space-y-6">
                 <div>

@@ -222,25 +222,27 @@ export default function ArchivedLinks() {
   const pageSlots = useMemo(() => getPageList(currentPage, totalPages), [currentPage, totalPages]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 overflow-x-hidden">
       {/* Header */}
       <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
               <Link
                 to="/dashboard"
-                className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-200"
+                className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-200 shrink-0"
               >
                 <ArrowLeft size={24} />
               </Link>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-gray-400 to-gray-500 flex items-center justify-center shrink-0">
                   <Archive size={20} className="text-white" />
                 </div>
-                <div>
-                  <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">보관된 링크</h1>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
+                    보관된 링크
+                  </h1>
+                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">
                     {searchQuery.trim()
                       ? `검색 결과 ${filteredLinks.length}건 · 전체 ${archivedLinks.length}건`
                       : `총 ${archivedLinks.length}개`}
@@ -250,14 +252,14 @@ export default function ArchivedLinks() {
             </div>
 
             {/* 검색 */}
-            <div className={`flex-1 max-w-md flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl ${neumorphismStyle.inset}`}>
-              <Search size={18} className="text-gray-400 dark:text-gray-500" />
+            <div className={`w-full sm:flex-1 sm:max-w-md flex items-center gap-2 sm:gap-3 min-w-0 px-3 sm:px-4 py-2 bg-white dark:bg-gray-800 rounded-xl ${neumorphismStyle.inset}`}>
+              <Search size={18} className="text-gray-400 dark:text-gray-500 shrink-0" />
               <input
-                type="text"
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="보관된 링크 검색..."
-                className="flex-1 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm placeholder:text-gray-400"
+                placeholder="검색…"
+                className="flex-1 min-w-0 bg-transparent outline-none text-gray-900 dark:text-gray-100 text-sm placeholder:text-gray-400"
               />
             </div>
           </div>
@@ -265,9 +267,9 @@ export default function ArchivedLinks() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 w-full min-w-0">
         {filteredLinks.length === 0 ? (
-          <div className={`bg-white dark:bg-gray-800 rounded-3xl p-12 text-center ${neumorphismStyle.light}`}>
+          <div className={`bg-white dark:bg-gray-800 rounded-3xl p-6 sm:p-12 text-center ${neumorphismStyle.light}`}>
             <Archive size={64} className="mx-auto mb-4 text-gray-300 dark:text-gray-600" />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
               {searchQuery ? '검색 결과가 없습니다' : '보관된 링크가 없습니다'}
@@ -284,7 +286,7 @@ export default function ArchivedLinks() {
               {paginatedLinks.map((link) => (
               <div
                 key={link.id}
-                className={`bg-white dark:bg-gray-800 rounded-2xl p-6 ${neumorphismStyle.light} hover:shadow-[12px_12px_24px_rgba(0,0,0,0.15),-12px_-12px_24px_rgba(255,255,255,0.8)] transition-all`}
+                className={`bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 ${neumorphismStyle.light} hover:shadow-[12px_12px_24px_rgba(0,0,0,0.15),-12px_-12px_24px_rgba(255,255,255,0.8)] transition-all`}
               >
                 <div className="flex items-start gap-4">
                   {/* 보드 색상 표시 */}
